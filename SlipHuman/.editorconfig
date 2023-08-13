@@ -1,0 +1,8 @@
+root = true
+
+[*.cs]
+charset = utf-8-bom
+end_of_line = crlf
+
+# CS0114: メンバーは継承されたメンバーを非表示にします。override キーワードがありません
+dotnet_diagnostic.CS0114.severity = none
