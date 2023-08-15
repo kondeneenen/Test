@@ -19,6 +19,9 @@ namespace RootMotion.Demos
             public bool crouch;
             public bool jump;
             public int actionIndex;
+
+            public float balance;
+            public bool isReset;
         }
 
         public bool walkByDefault;        // toggle for walking state
@@ -52,12 +55,28 @@ namespace RootMotion.Demos
             bool isDash = false;
             if (_gamepad != null)
             {
-                h = _gamepad.leftStick.ReadValue().x;
-                v = _gamepad.leftStick.ReadValue().y;
+                //h = _gamepad.leftStick.ReadValue().x;
+                //v = _gamepad.leftStick.ReadValue().y;
+                if (_gamepad.dpad.up.isPressed) v = 1f;
+                if (_gamepad.dpad.down.isPressed) v = -1f;
+                if (_gamepad.dpad.right.isPressed) h = 1f;
+                if (_gamepad.dpad.left.isPressed) h = -1f;
+
+                if (_gamepad.buttonEast.isPressed)
+                {
+                    v = 1f;
+                }
 
                 state.crouch = canCrouch && _gamepad.rightTrigger.wasPressedThisFrame;
-                state.jump = canJump && _gamepad.buttonEast.wasPressedThisFrame || _gamepad.buttonSouth.wasPressedThisFrame;
-                isDash = _gamepad.rightShoulder.isPressed;
+                state.jump = canJump && _gamepad.buttonWest.wasPressedThisFrame;
+                if (_gamepad.buttonSouth.isPressed)
+                {
+                    v = 1f;
+                    isDash = true;
+                }
+
+                state.balance = _gamepad.leftStick.ReadValue().y;
+                state.isReset = _gamepad.leftTrigger.wasPressedThisFrame;
             }
 
             if (_keyboard != null)
@@ -69,11 +88,18 @@ namespace RootMotion.Demos
 
                 state.crouch |= canCrouch && _keyboard.cKey.wasPressedThisFrame;
                 state.jump |= canJump && _keyboard.spaceKey.wasPressedThisFrame;
+                //state.jump = false; // _gamepad.buttonEast を押すと、なぜか _keyboard.spaceKey.wasPressedThisFrame = true になってジャンプしてしまうので塞ぐ→Steamでのコントローラーが常に有効になっていたのが原因
                 isDash |= _keyboard.leftShiftKey.isPressed;
+                state.isReset |= _keyboard.rKey.wasPressedThisFrame;
             }
 
-            // calculate move direction
-            Vector3 move = cam.rotation * new Vector3(h, 0f, v).normalized;
+            // カメラ方向に移動
+            //Vector3 move = cam.rotation * new Vector3(h, 0f, v).normalized;
+
+            // カメラ方向ではなくワールド向きに移動
+            Vector3 moveDir = h == 0f ? Vector3.forward : Vector3.right;
+            float moveMag = h == 0f ? v : h;
+            Vector3 move = moveDir * moveMag;
 
             // Flatten move vector to the character.up plane
             if (move != Vector3.zero)

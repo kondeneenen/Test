@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class BuildManager : MonoBehaviour
 {
@@ -16,7 +17,7 @@ public class BuildManager : MonoBehaviour
 
     private void Update()
     {
-        if(Input.GetKeyDown(KeyCode.F1))
+        if (Keyboard.current != null && Keyboard.current.f1Key.wasPressedThisFrame)
         {
             UnityEngine.SceneManagement.SceneManager.LoadScene(0);
         }

@@ -44,10 +44,12 @@ namespace RootMotion.Demos
         public float groundStickyEffect = 4f;               // power of 'stick to ground' effect - prevents bumping down slopes.
         public float maxVerticalVelocityOnGround = 3f;      // the maximum y velocity while the character is grounded
         public float velocityToGroundTangentWeight = 0f;    // the weight of rotating character velocity vector to the ground tangent
+        public float slipVelocityRatio = 20f;
 
         [Header("Rotation")]
         public bool lookInCameraDirection; // should the character be looking in the same direction that the camera is facing
         public float turnSpeed = 5f;                    // additional turn speed added when the player is moving (added to animation root rotation)
+        public float turnSpeedX = 20f;
         public float stationaryTurnSpeedMlp = 1f;           // additional turn speed added when the player is stationary (added to animation root rotation)
 
         [Header("Jumping and Falling")]
@@ -101,6 +103,8 @@ namespace RootMotion.Demos
         private bool jumpReleased;
 
         private bool isGround_Ice;
+        private Vector3 initPos;
+        private Quaternion initQuat;
 
         // Use this for initialization
         protected override void Start()
@@ -115,6 +119,9 @@ namespace RootMotion.Demos
             animState.onGround = true;
 
             if (cam != null) cam.enabled = false;
+
+            initPos = transform.position;
+            initQuat = transform.rotation;
         }
 
         void OnAnimatorMove()
@@ -216,6 +223,11 @@ namespace RootMotion.Demos
             animState.yVelocity = Mathf.Lerp(animState.yVelocity, velocityY, Time.deltaTime * 10f);
             animState.crouch = userControl.state.crouch;
             animState.isStrafing = moveMode == MoveMode.Strafe;
+
+            if (userControl.state.isReset)
+            {
+                transform.SetPositionAndRotation(initPos, initQuat);
+            }
         }
 
         protected virtual void LateUpdate()
@@ -267,22 +279,19 @@ namespace RootMotion.Demos
                 }
 
                 // Vertical velocity
-                //Vector3 verticalVelocity = V3Tools.ExtractVertical(r.velocity, gravity, 1f);
-                //Vector3 horizontalVelocity = V3Tools.ExtractHorizontal(velocity, gravity, 1f);
-                Vector3 verticalVelocity = V3Tools.ExtractVertical(r.velocity, normal, 1f);
-                Vector3 horizontalVelocity = V3Tools.ExtractHorizontal(velocity, normal, 1f);
+                Vector3 verticalVelocity = V3Tools.ExtractVertical(r.velocity, gravity, 1f);
+                Vector3 horizontalVelocity = V3Tools.ExtractHorizontal(velocity, gravity, 1f);
+                Vector3 slipVelocity = Vector3.zero;
 
-                // 滑る地面では重力による斜面方向速度は常に有効
+                // 滑る地面では重力による斜面方向速度が発生（滑らない地面では摩擦力として釣り合っている）
                 if (isGround_Ice)
                 {
-                    // この行だけにすると想定挙動
-                    //horizontalVelocity = V3Tools.ExtractHorizontal(r.velocity, normal, 1f);
-
-                    // だが、以下が合ってるように思えるのだが・・・
-                    horizontalVelocity += V3Tools.ExtractHorizontal(r.velocity, normal, 1f);
-                    //verticalVelocity += V3Tools.ExtractVertical(velocity, normal, 0.1f);
-
-                    Debug.Log($"{V3Tools.ExtractHorizontal(velocity, normal, 1f)}, {horizontalVelocity}");
+                    slipVelocity = V3Tools.ExtractHorizontal(gravity * Time.deltaTime, normal, slipVelocityRatio);
+                    r.constraints = RigidbodyConstraints.FreezeRotationY | RigidbodyConstraints.FreezeRotationZ;
+                }
+                else
+                {
+                    r.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationY | RigidbodyConstraints.FreezeRotationZ;
                 }
 
                 if (onGround)
@@ -293,7 +302,7 @@ namespace RootMotion.Demos
                     }
                 }
 
-                r.velocity = horizontalVelocity + verticalVelocity;
+                r.velocity = horizontalVelocity + verticalVelocity + slipVelocity;
             }
             else
             {
@@ -400,6 +409,10 @@ namespace RootMotion.Demos
             // Rotating the character
             //RigidbodyRotateAround(characterAnimation.GetPivotPoint(), transform.up, angle * Time.deltaTime * turnSpeed);
             r.MoveRotation(Quaternion.AngleAxis(angle * Time.deltaTime * turnSpeed, transform.up) * r.rotation);
+
+            Vector3 torque = transform.right * userControl.state.balance * turnSpeedX;
+            r.AddTorque(torque, ForceMode.Impulse);
+            //r.AddTorque(torque, ForceMode.Acceleration);
         }
 
         // Which way to look at?

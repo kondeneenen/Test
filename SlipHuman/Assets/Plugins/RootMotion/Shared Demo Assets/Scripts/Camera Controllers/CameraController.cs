@@ -176,7 +176,7 @@ namespace RootMotion
             if (!cam.enabled) return;
 
             // Rotation
-            rotation = Quaternion.AngleAxis(x, Vector3.up) * Quaternion.AngleAxis(y, Vector3.right);
+            //rotation = Quaternion.AngleAxis(x, Vector3.up) * Quaternion.AngleAxis(y, Vector3.right);
 
             if (rotationSpace != null)
             {
@@ -218,7 +218,7 @@ namespace RootMotion
                 transform.position = position;
             }
 
-            transform.rotation = rotation;
+            //transform.rotation = rotation;
         }
 
         // Zoom input
