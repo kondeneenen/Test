@@ -22,6 +22,7 @@ namespace RootMotion.Demos
         private float deltaAngle;
         private float jumpLeg;
         private bool lastJump;
+        private float walkspeed;
 
         protected override void Start()
         {
@@ -74,8 +75,19 @@ namespace RootMotion.Demos
             angle = Mathf.Clamp(angle / Time.deltaTime, -1f, 1f);
 
             // Update Animator params
+            float walkspeedTarget = 0f;
+            if (characterController.animState.isBalance)
+            {
+                walkspeedTarget = Mathf.Abs(characterController.animState.walkSpeed);
+            }
+            else
+            {
+                walkspeedTarget = characterController.animState.moveDirection.z;
+            }
+            walkspeed = CharacterThirdPerson.Lerp(walkspeed, walkspeedTarget, 0.3f, Time.deltaTime);
+            animator.SetFloat("Forward", walkspeed);
+
             animator.SetFloat("Turn", Mathf.Lerp(animator.GetFloat("Turn"), angle, Time.deltaTime * turnSpeed));
-            animator.SetFloat("Forward", characterController.animState.moveDirection.z);
             animator.SetFloat("Right", characterController.animState.moveDirection.x);
             animator.SetBool("Crouch", characterController.animState.crouch);
             animator.SetBool("OnGround", characterController.animState.onGround);
@@ -113,8 +125,9 @@ namespace RootMotion.Demos
                 characterController.transform.position += animator.deltaPosition;
                 characterController.transform.rotation *= animator.deltaRotation;
             }
-            else
+            else if (characterController.animState.moveDirection.z > 0f && !characterController.animState.isBalance)
             {
+                // 歩行ボタン押し、かつ、バランス入力していない場合に移動
                 characterController.Move(animator.deltaPosition, animator.deltaRotation);
             }
         }

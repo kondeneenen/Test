@@ -28,6 +28,8 @@ namespace RootMotion.Demos
             public bool isStrafing; // should the character always rotate to face the move direction or strafe?
             public float yVelocity; // y velocity of the character
             public bool doubleJump;
+            public bool isBalance;
+            public float walkSpeed;
         }
 
         [Header("References")]
@@ -45,6 +47,8 @@ namespace RootMotion.Demos
         public float maxVerticalVelocityOnGround = 3f;      // the maximum y velocity while the character is grounded
         public float velocityToGroundTangentWeight = 0f;    // the weight of rotating character velocity vector to the ground tangent
         public float slipVelocityRatio = 20f;
+        public float angularDrag_Default = 13f;
+        public float angularDrag_Walk = 10f;
 
         [Header("Rotation")]
         public bool lookInCameraDirection; // should the character be looking in the same direction that the camera is facing
@@ -72,7 +76,13 @@ namespace RootMotion.Demos
         public float wallRunWeightSpeed = 5f;               // the speed of blending in/out the wall running effect
 
         [Header("Crouching")]
-        public float crouchCapsuleScaleMlp = 0.6f;			// the capsule collider scale multiplier while crouching
+        public float crouchCapsuleScaleMlp = 0.6f;          // the capsule collider scale multiplier while crouching
+
+        [Header("Constraint")]
+        public Transform constraint_HandL;
+        public Transform constraint_HandR;
+        public Transform transform_LArmUpper1;
+        public Transform transform_RArmUpper1;
 
         /// <summary>
         /// Enable this while playing an animation that should be driven 100% by root motion, such as climbing walls
@@ -105,6 +115,14 @@ namespace RootMotion.Demos
         private bool isGround_Ice;
         private Vector3 initPos;
         private Quaternion initQuat;
+        private float offset_Body;
+        private FinalIK.FullBodyBipedIK ik;
+        private EffectorOffset effectorOffset;
+        private Vector3 pos_HandL;
+        private Vector3 pos_HandR;
+        private float angle_HandL;
+        private float angle_HandR;
+        private float weight;
 
         // Use this for initialization
         protected override void Start()
@@ -122,6 +140,9 @@ namespace RootMotion.Demos
 
             initPos = transform.position;
             initQuat = transform.rotation;
+
+            ik = characterAnimation.GetComponent<FinalIK.FullBodyBipedIK>();
+            effectorOffset = GetComponent<EffectorOffset>();
         }
 
         void OnAnimatorMove()
@@ -159,16 +180,19 @@ namespace RootMotion.Demos
             r.MoveRotation(transform.rotation * fixedDeltaRotation);
             fixedDeltaRotation = Quaternion.identity;
 
+            bool isStop = userControl.state.move == Vector3.zero;
+            r.angularDrag = isStop ? angularDrag_Default : angularDrag_Walk;
+
             Rotate();
 
             GroundCheck(); // detect and stick to ground
 
             // Friction
-            bool isHighFriction = userControl.state.move == Vector3.zero && groundDistance < airborneThreshold * 0.5f && !isGround_Ice;
+            bool isHighFriction = isStop && groundDistance < airborneThreshold * 0.5f && !isGround_Ice;
             if (isHighFriction) HighFriction();
             else ZeroFriction();
 
-            bool stopSlide = !fullRootMotion && onGround && userControl.state.move == Vector3.zero && r.velocity.magnitude < 0.5f && groundDistance < airborneThreshold * 0.5f && !isGround_Ice;
+            bool stopSlide = !fullRootMotion && onGround && isStop && r.velocity.magnitude < 0.5f && groundDistance < airborneThreshold * 0.5f && !isGround_Ice;
 
             // Individual gravity
             if (gravityTarget != null)
@@ -223,6 +247,78 @@ namespace RootMotion.Demos
             animState.yVelocity = Mathf.Lerp(animState.yVelocity, velocityY, Time.deltaTime * 10f);
             animState.crouch = userControl.state.crouch;
             animState.isStrafing = moveMode == MoveMode.Strafe;
+            animState.isBalance = userControl.state.balance != 0f;
+
+            //
+            // 前傾・後傾から戻る入力 input_Balance の反映
+            //
+
+            float input_Balance = userControl.state.balance;
+            float waldSpeed_Target = 0f;
+            float offset_Body_Target = 0f;
+            float angleVelocity = 0f;
+            float weight_Target = 0f;
+
+            if (input_Balance == 0f)
+            {
+                waldSpeed_Target = 0f;
+                offset_Body_Target = 0f;
+                angleVelocity = 0f;
+                weight_Target = 0f;
+            }
+            else if (input_Balance < 0f)
+            {
+                waldSpeed_Target = input_Balance * 1.2f;
+                offset_Body_Target = -0.1f;
+                angleVelocity = Mathf.Lerp(Time.deltaTime * 400f, Time.deltaTime * 1200f, Mathf.Abs(input_Balance));
+                weight_Target = 1f;
+            }
+            else
+            {
+                waldSpeed_Target = 0f;
+                offset_Body_Target = 0.1f;
+                angleVelocity = Mathf.Lerp(-Time.deltaTime * 400f, -Time.deltaTime * 1200f, Mathf.Abs(input_Balance));
+                weight_Target = 1f;
+            }
+
+            // 歩行アニメーション速度
+            // 前傾から戻ろうとするときのみ再生
+            animState.walkSpeed = Lerp(animState.walkSpeed, waldSpeed_Target, 0.3f, Time.deltaTime);
+
+            // Body と Shoulder の前後オフセット
+            // 前傾から戻る場合にへっぴり腰にし、後傾から戻る場合に腰を突き出す
+            // 前傾から戻る場合に肩を前にし、後傾から戻る場合に肩を後ろにする
+            offset_Body = Lerp(offset_Body, offset_Body_Target, 0.2f, Time.deltaTime);
+            effectorOffset.bodyOffset = new Vector3(0f, 0f, offset_Body);
+            effectorOffset.leftShoulderOffset = new Vector3(0f, 0f, -offset_Body * 0.5f);
+            effectorOffset.rightShoulderOffset = new Vector3(0f, 0f, -offset_Body * 0.5f);
+
+            // 両手のコンストレイントを設定することで、腕を回す
+            float angleX = Mathf.Lerp(10f, 20f, Mathf.Abs(input_Balance));
+
+            Vector3 axis_HandR = transform.right;
+            axis_HandR = Quaternion.AngleAxis(-10f, transform.forward) * axis_HandR;
+            pos_HandR = Quaternion.AngleAxis(angleX, transform.forward) * axis_HandR * 0.6f;
+            angle_HandR += angleVelocity;
+            pos_HandR = Quaternion.AngleAxis(angle_HandR, axis_HandR) * pos_HandR;
+            constraint_HandR.position = transform_RArmUpper1.position + pos_HandR;
+
+            Vector3 axis_HandL = -transform.right;
+            axis_HandL = Quaternion.AngleAxis(10f, transform.forward) * axis_HandL;
+            pos_HandL = Quaternion.AngleAxis(-angleX, transform.forward) * axis_HandL * 0.6f;
+            angle_HandL += angleVelocity;
+            pos_HandL = Quaternion.AngleAxis(-angle_HandL, axis_HandL) * pos_HandL;
+            constraint_HandL.position = transform_LArmUpper1.position + pos_HandL;
+
+            // バランス入力が無い場合はデフォルトアニメに補間する
+            weight = Lerp(weight, weight_Target, 0.2f, Time.deltaTime);
+            ik.solver.leftHandEffector.positionWeight = weight;
+            ik.solver.rightHandEffector.positionWeight = weight;
+
+            Debug.DrawLine(transform_RArmUpper1.position, transform_RArmUpper1.position + axis_HandR, Color.red);
+            Debug.DrawLine(transform_RArmUpper1.position, transform_RArmUpper1.position + pos_HandR, Color.yellow);
+            Debug.DrawLine(transform_LArmUpper1.position, transform_LArmUpper1.position + axis_HandL, Color.red);
+            Debug.DrawLine(transform_LArmUpper1.position, transform_LArmUpper1.position + pos_HandL, Color.yellow);
 
             if (userControl.state.isReset)
             {
@@ -411,8 +507,7 @@ namespace RootMotion.Demos
             r.MoveRotation(Quaternion.AngleAxis(angle * Time.deltaTime * turnSpeed, transform.up) * r.rotation);
 
             Vector3 torque = transform.right * userControl.state.balance * turnSpeedX;
-            r.AddTorque(torque, ForceMode.Impulse);
-            //r.AddTorque(torque, ForceMode.Acceleration);
+            r.AddTorque(torque, ForceMode.Acceleration);
         }
 
         // Which way to look at?
@@ -540,5 +635,18 @@ namespace RootMotion.Demos
             // remember when we were last in air, for jump delay
             if (!onGround) lastAirTime = Time.time;
         }
+
+        public static float Lerp(float a, float b, float ratio, float deltaTime)
+        {
+            ratio = Mathf.Clamp(ratio, 0f, 1f);
+            return Mathf.Lerp(a, b, 1f - Mathf.Pow(1f - ratio, DeltaTime2TimeRatio(deltaTime)));
+        }
+
+        public static float DeltaTime2TimeRatio(float deltaTime)
+        {
+            return deltaTime * cDeltaTime2TimeRatio;
+        }
+
+        static float cDeltaTime2TimeRatio = 60f;
     }
 }

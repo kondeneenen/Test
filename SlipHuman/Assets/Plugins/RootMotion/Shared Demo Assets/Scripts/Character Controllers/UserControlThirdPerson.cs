@@ -88,7 +88,7 @@ namespace RootMotion.Demos
 
                 state.crouch |= canCrouch && _keyboard.cKey.wasPressedThisFrame;
                 state.jump |= canJump && _keyboard.spaceKey.wasPressedThisFrame;
-                //state.jump = false; // _gamepad.buttonEast を押すと、なぜか _keyboard.spaceKey.wasPressedThisFrame = true になってジャンプしてしまうので塞ぐ→Steamでのコントローラーが常に有効になっていたのが原因
+                state.jump = false; // _gamepad.buttonEast を押すと、なぜか _keyboard.spaceKey.wasPressedThisFrame = true になってジャンプしてしまうので塞ぐ→Steamでのコントローラーが常に有効になっていたのが原因
                 isDash |= _keyboard.leftShiftKey.isPressed;
                 state.isReset |= _keyboard.rKey.wasPressedThisFrame;
             }
